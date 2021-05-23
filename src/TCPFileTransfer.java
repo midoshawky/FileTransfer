@@ -134,7 +134,7 @@ public class TCPFileTransfer {
             os.write(fileBytes,0,fileBytes.length);
 
             //serverSocket.close();
-            //fileInputStream.close();
+            fileInputStream.close();
         }
 
 
