@@ -7,30 +7,22 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class TCPFileTransfer {
-    private static final int SERVER_MODE = 0;
-    private static final int CLIENT_MODE = 1;
-    private static final String[] files = {
-            "/Users/muhammedshawky/IdeaProjects/FileTransfer/src/ServerFolder/file2.txt",
-            "/Users/muhammedshawky/IdeaProjects/FileTransfer/src/ServerFolder/file3.txt",
-            "/Users/muhammedshawky/IdeaProjects/FileTransfer/src/ServerFolder/hello.txt",
-    };
-
-    public static void main(String[] args) throws Exception{
-
-        ExecutorService executorService = Executors.newFixedThreadPool(2);
-
-        FileTransferManager fileTransferManagerServer = new FileTransferManager(SERVER_MODE);
-        FileTransferManager fileTransferManagerClient = new FileTransferManager(CLIENT_MODE);
-
-        executorService.submit(fileTransferManagerServer);
-        executorService.submit(fileTransferManagerClient);
-    }
-
+    static final int SERVER_MODE = 0;
+    static final int CLIENT_MODE = 1;
+    private static final String BYE_MSG = "Okay bye ..";
 
     static class FileTransferManager implements Runnable{
-        int side;
-        FileTransferManager(int side) {
+        private int side;
+        private int portNumber;
+        private String host;
+        FileTransferManager(int side,int portNumber) {
             this.side = side;
+            this.portNumber = portNumber;
+        }
+        FileTransferManager(int side,int portNumber,String host) {
+            this.side = side;
+            this.portNumber = portNumber;
+            this.host = host;
         }
 
         @Override
@@ -57,84 +49,98 @@ public class TCPFileTransfer {
         }
 
         private  void initClientSide() throws Exception{
-            Socket socket = new Socket("localhost",6777);
+            Socket socket = new Socket(host,portNumber);
             PrintWriter printWriter = new PrintWriter(socket.getOutputStream());
             InputStreamReader in = new InputStreamReader(socket.getInputStream());
             BufferedReader bufferedReader = new BufferedReader(in);
             InputStream inputStream = socket.getInputStream();
-            String[] serverFiles = new String[5];
-            byte[] fileSize;
-            String fileNum = "";
+            int count;
+            byte[] fileSize  = new byte[8192];
+            String choose = "";
             Scanner scanner = new Scanner(System.in);
 
-            for(int i =  0 ; i < 5 ; i++){
-                String msg = bufferedReader.readLine();
-                System.out.println(msg);
-                serverFiles[i] = msg;
-            }
+            String msg = bufferedReader.readLine();
+            System.out.println(msg);
 
-
-            System.out.print("Enter file number : ");
-            fileNum = scanner.next();
-            printWriter.println(fileNum);
+            System.out.print("Choose : ");
+            choose = scanner.next();
+            printWriter.println(choose);
             printWriter.flush();
 
-            String selectedFileName = getFileName(serverFiles,fileNum);
-            String selectedFilePath = fileChoose(selectedFileName);
-            FileOutputStream fileOutput = new FileOutputStream(selectedFilePath);
-            fileSize = new byte[inputStream.readAllBytes().length];
-            inputStream.read(fileSize,0,fileSize.length);
+            String filePath  = fileSave("Text.txt");
+            printWriter.println(filePath);
+            printWriter.flush();
+            inputStream = socket.getInputStream();
+            String serverResponse = bufferedReader.readLine();
 
-            fileOutput.write(fileSize,0,fileSize.length);
+            System.out.println(serverResponse);
 
-            socket.close();
-            fileOutput.close();
+            if(serverResponse.equals(BYE_MSG))
+            {
+                socket.close();
+            }else
+            {
+                FileOutputStream fileOutput = new FileOutputStream(filePath);
+                while ((count = inputStream.read(fileSize)) > 0)
+                {
+                    fileOutput.write(fileSize,0,count);
+                    if(count == (int)fileOutput.getChannel().size())
+                    {
+                        System.out.println("File Downloaded Successfully.");
+                        break;
+                    }
+                }
+                fileOutput.close();
+            }
+
         }
 
 
         private  void initServerSide() throws Exception{
 
-            ServerSocket serverSocket = new ServerSocket(6777);
+            ServerSocket serverSocket = new ServerSocket(portNumber);
 
             while (true){
                 Socket socket = serverSocket.accept();
                 PrintWriter printWriter = new PrintWriter(socket.getOutputStream());
-
-                int fileIndex = 0;
-                printWriter.println(" Hello File Transfer Server is here ..  ");
-                printWriter.println(" Choose which file you need to download ");
-
-                for(var i : files){
-                    File f = new File(i);
-                    printWriter.println(" " + fileIndex + "- " + f.getName() + " -- " + f.length() + " kb ");
-                    fileIndex++;
-                    printWriter.flush();
-                }
-
                 InputStreamReader in = new InputStreamReader(socket.getInputStream());
+                File selectedFile = fileChoose();
+
+
+                assert selectedFile != null;
+                printWriter.println("You want to download this file : " + selectedFile.getName() + " -- " + selectedFile.length() + "KB  ? [Y/N]");
+                printWriter.flush();
+
                 BufferedReader bufferedReader = new BufferedReader(in);
                 String msg = bufferedReader.readLine();
-                int fileNum = Integer.parseInt(msg);
-                System.out.println("Selected File  :" + getFileName(files[fileNum]));
-                //Thread.sleep(2000);
-                sendFile(files[fileNum],printWriter,socket);
-
+                System.out.println("Client :" + msg);
+                if(msg.contains("Y") || msg.contains("y"))
+                {
+                    String locationResponse = bufferedReader.readLine();
+                    System.out.println("File Path : " + locationResponse);
+                    printWriter.println("File is sending .. ");
+                    printWriter.flush();
+                    sendFile(selectedFile.getPath(),socket);
+                }else{
+                    printWriter.println("Okay bye ..");
+                    printWriter.flush();
+                }
                 //ClosingStreams
             }
         }
 
-        private  void sendFile(String filePath,PrintWriter printWriter,Socket socket) throws Exception{
+        private  void sendFile(String filePath,Socket socket) throws Exception{
             File f = new File(filePath);
             long fileSize = f.length();
-            printWriter.println(" File :" + f.getName() + " Downloading .. ");
+            System.out.println(" File :" + f.getName() + " Sending .. ");
             byte[] fileBytes = new byte[(int)fileSize];
             FileInputStream fileInputStream = new FileInputStream(filePath);
             fileInputStream.read(fileBytes,0,fileBytes.length);
             OutputStream os = socket.getOutputStream();
-            os.write(fileBytes,0,fileBytes.length);
 
-            //serverSocket.close();
+            os.write(fileBytes,0,fileBytes.length);
             fileInputStream.close();
+
         }
 
 
@@ -157,17 +163,27 @@ public class TCPFileTransfer {
             return file.length();
         }
 
-        private String fileChoose(String selectedFileName){
+        private String fileSave(String selectedFileName){
             JFileChooser fileChooser = new JFileChooser();
             fileChooser.setCurrentDirectory(new File(System.getProperty("user.home")));
             File selectedFile = new File(selectedFileName);
             fileChooser.setSelectedFile(selectedFile);
-            int returnVal = fileChooser.showSaveDialog(null);
+            int returnVal = fileChooser.showDialog(null,"Save Here");
             if (returnVal == JFileChooser.APPROVE_OPTION) {
-                File fileToSave = fileChooser.getSelectedFile();
-                return fileToSave.getPath();
+                File fileToSave = fileChooser.getCurrentDirectory();
+                return fileToSave.getPath() +"/"+ selectedFileName;
             }
             return "";
+        }
+
+        private File fileChoose(){
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setCurrentDirectory(new File(System.getProperty("user.home")));
+            int returnVal = fileChooser.showDialog(null,"Select");
+            if (returnVal == JFileChooser.APPROVE_OPTION) {
+                return fileChooser.getSelectedFile();
+            }
+            return null;
         }
 
     }
