@@ -3,8 +3,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 import javax.swing.JFileChooser;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+
 
 public class TCPFileTransfer {
     static final int SERVER_MODE = 0;
